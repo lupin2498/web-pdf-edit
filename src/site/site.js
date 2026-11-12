@@ -140,9 +140,8 @@ function prefetchEditor() {
 
 function appUrl(params) {
   const q = new URLSearchParams(params);
-  if (lang === 'en') q.set('lang', 'en');
-  const s = q.toString();
-  return `${config.base}app/${s ? `?${s}` : ''}`;
+  q.set('lang', lang);
+  return `${config.base}app/?${q}`;
 }
 
 // ---------------------------------------------------------------- drop zones

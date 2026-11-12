@@ -59,7 +59,10 @@ export function fileUrl(p) {
 
 let browserPromise = null;
 function getBrowser() {
-  if (!browserPromise) browserPromise = chromium.launch({ executablePath: SYSTEM_CHROMIUM || undefined, args: ['--no-sandbox'] });
+  // Without a UTF-8 locale Chromium names downloads with accented names
+  // "download" (containers often run with LANG unset).
+  const env = { ...process.env, LANG: process.env.LANG && /utf-?8/i.test(process.env.LANG) ? process.env.LANG : 'C.UTF-8' };
+  if (!browserPromise) browserPromise = chromium.launch({ executablePath: SYSTEM_CHROMIUM || undefined, args: ['--no-sandbox'], env });
   return browserPromise;
 }
 

@@ -107,7 +107,8 @@ async function runPaywall(need, packId = null) {
   if (need && need.pages <= billing.available) return true;
   const config = billing.config;
   const providers = config.providers.filter((p) => config.packs.some((pk) => packPrice(pk, p)));
-  let provider = providers[0] || null;
+  // English visitors usually pay by card: PayPal first when it is offered.
+  let provider = (getLanguage() === 'en' && providers.includes('paypal') ? 'paypal' : providers[0]) || null;
   const needed = need ? need.pages : 0;
   const missingNow = () => Math.max(0, needed - billing.available);
   const defaultPack = () => {

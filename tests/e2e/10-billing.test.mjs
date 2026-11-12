@@ -99,7 +99,8 @@ test('a short changed document downloads with free pages', async () => {
   await waitQuota(page, 2);
   assert.equal((await account(page)).free.remaining, 2);
   await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((t) => /3 trang miễn phí/.test(t.textContent)));
-  assert.equal(await page.evaluate(() => window.__app.activeDoc.session.dirty), false);
+  // The downloaded file becomes the document that is edited further.
+  await page.waitForFunction(() => window.__app.activeDoc.session.dirty === false);
 });
 
 test('downloading the same pages again costs nothing', async () => {
@@ -173,18 +174,24 @@ test('ads are hidden while purchased pages are left', async () => {
   assert.equal(await hidden('.home .ad-slot[data-ad="app_home"]'), true);
 });
 
-test('two quick downloads charge the pages once', async () => {
+test('exports started at the same time charge the pages once', async () => {
   const { page } = ctx;
   await openDoc(page, path.join(FIXTURES, 'images.pdf'));
   await touchDoc(page);
   const credits = (await account(page)).credits;
   const before = downloadCount(ctx, 'images.pdf');
-  await page.click(`${ACTIVE} .viewer`, { position: { x: 4, y: 4 } });
-  await page.keyboard.press('Control+s');
-  await page.keyboard.press('Control+s');
-  await page.click('.download-btn').catch(() => {});
+  const beforeTxt = downloadCount(ctx, '10-images.txt');
+  await queueDialog(page, path.join(OUT, '10-images.txt'));
+  // A double click on Download plus a conversion, all at once.
+  const results = await page.evaluate(() => {
+    const app = window.__app;
+    const doc = app.activeDoc;
+    return Promise.all([app.save(doc), app.save(doc), app.features.convert.toText(doc).then(() => 'text')]);
+  });
+  assert.deepEqual(results.slice(0, 2).sort(), [false, true]);
   await waitNewDownload(ctx, 'images.pdf', before);
-  await page.waitForTimeout(1500);
+  await waitNewDownload(ctx, '10-images.txt', beforeTxt);
+  await page.waitForTimeout(800);
   assert.equal(downloadCount(ctx, 'images.pdf'), before + 1);
   assert.equal((await account(page)).credits, credits - 3);
 });
@@ -228,21 +235,24 @@ test('the restore code brings the purchased pages to another browser', async () 
   try {
     const p2 = other.page;
     await waitQuota(p2, 5);
+    const top = '.modal >> nth=-1';
     await p2.click('.quota-pill');
     await p2.waitForSelector('.modal.account-dialog');
     await p2.click('.modal.account-dialog .modal-footer .link-btn');
     await p2.waitForSelector('.modal input.input');
-    await p2.fill('.modal input.input', code.toLowerCase().replace(/-/g, ' '));
-    await p2.click('.modal .btn.primary');
+    await p2.fill(`${top} >> input.input`, code.toLowerCase().replace(/-/g, ' '));
+    await p2.click(`${top} >> .btn.primary`);
     await p2.waitForFunction(() => [...document.querySelectorAll('.toast.success')].some((t) => /khôi phục/i.test(t.textContent)), null, { timeout: 10000 });
     const a = await account(p2);
     assert.equal(a.credits, credits);
     await waitQuota(p2, credits);
     // A wrong code is refused.
+    // After restoring, the account dialog opens again with the new balance.
     await p2.waitForSelector('.modal.account-dialog');
+    assert.match(await p2.textContent('.modal.account-dialog'), new RegExp(String(credits)));
     await p2.click('.modal.account-dialog .modal-footer .link-btn');
-    await p2.fill('.modal input.input', 'AAAA-BBBB-CCCC-DDDD-EEEE');
-    await p2.click('.modal .btn.primary');
+    await p2.fill(`${top} >> input.input`, 'AAAA-BBBB-CCCC-DDDD-EEEE');
+    await p2.click(`${top} >> .btn.primary`);
     await p2.waitForFunction(() => [...document.querySelectorAll('.toast.error')].some((t) => /không đúng/i.test(t.textContent)), null, { timeout: 10000 });
     assert.deepEqual(appErrors(other.logs).filter((l) => !/404/.test(l)), []);
   } finally {
@@ -267,6 +277,24 @@ test('when the server refuses the charge the paywall opens again', async () => {
   assert.equal((await account(page)).credits, 2);
   await waitQuota(page, 2);
   assert.equal(await page.evaluate(() => window.__app.activeDoc.session.dirty), true);
+});
+
+test('a split that cannot be paid for downloads nothing', async () => {
+  const { page } = ctx;
+  const zips = () => ctx.downloads.filter((d) => d.name.endsWith('.zip')).length;
+  const before = zips();
+  await page.click('.ribbon-tab[data-rtab="page"]');
+  await page.click('.rb-btn[data-cmd="split"]');
+  await page.waitForSelector('.modal input[type=number]');
+  await page.fill('.modal input[type=number]', '1');
+  await page.click('.modal .btn.primary');
+  await page.waitForSelector(`${paywall} .pw-need`, { timeout: 15000 });
+  await closePaywall(page);
+  await page.waitForTimeout(800);
+  assert.equal(zips(), before);
+  assert.equal(await page.$('.busy'), null);
+  assert.equal((await account(page)).credits, 2);
+  await page.click('.ribbon-tab[data-rtab="home"]');
 });
 
 test('no errors were logged', () => {

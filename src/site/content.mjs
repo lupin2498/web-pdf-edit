@@ -32,9 +32,11 @@ export function toolPath(tool, lang) {
   return lang === 'en' ? `/en/${tool.slug.en}/` : `/${tool.slug.vi}/`;
 }
 
+// The editor always opens in the language of the page that links to it
+// (it would otherwise keep the language chosen on an earlier visit).
 export function appPath(lang, params = '') {
-  const q = [params, lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
-  return `/app/${q ? `?${q}` : ''}`;
+  const q = [params, `lang=${lang}`].filter(Boolean).join('&');
+  return `/app/?${q}`;
 }
 
 // ---------------------------------------------------------------------------

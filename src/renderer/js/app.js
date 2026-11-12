@@ -112,7 +112,8 @@ export class App {
       house: (placement) => {
         const second = placement === 'app_home';
         const cfg = billing.config;
-        const cheapest = cfg.packs.map((p) => packPrice(p, cfg.providers[0])).filter(Boolean).sort((a, b) => a.amount - b.amount)[0];
+        const provider = getLanguage() === 'en' && cfg.providers.includes('paypal') ? 'paypal' : cfg.providers[0];
+        const cheapest = cfg.packs.map((p) => packPrice(p, provider)).filter(Boolean).sort((a, b) => a.amount - b.amount)[0];
         const params = { n: cfg.free.pages, price: cheapest ? formatMoney(cheapest.amount, cheapest.currency, getLanguage()) : '' };
         const card = h(
           'div',

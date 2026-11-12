@@ -37,7 +37,7 @@ function el(tag, cls, text) {
 }
 
 function editorUrl() {
-  return `${config.base}app/${lang === 'en' ? '?lang=en' : ''}`;
+  return `${config.base}app/?lang=${lang}`;
 }
 
 function backButtons() {
