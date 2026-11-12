@@ -25,6 +25,32 @@ function int(v, def, min = -Infinity, max = Infinity) {
   return Math.min(max, Math.max(min, n));
 }
 
+// TRUST_PROXY: 0/false = no proxy, true/1..9 = that many reverse proxies in
+// front of the server, "cloudflare" = trust the CF-Connecting-IP header.
+function parseTrustProxy(v) {
+  const s = String(v ?? '').trim().toLowerCase();
+  if (!s || /^(0|false|no|off)$/.test(s)) return 0;
+  if (s === 'cloudflare') return 'cloudflare';
+  if (/^(true|yes|on)$/.test(s)) return 1;
+  if (/^[1-9]$/.test(s)) return Number(s);
+  throw new Error('TRUST_PROXY must be 0, the number of reverse proxies (1-9) or "cloudflare"');
+}
+
+function parseSiteUrl(v) {
+  let s = String(v || '').trim().replace(/\/+$/, '');
+  if (!s) return '';
+  if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+  let url;
+  try {
+    url = new URL(s);
+  } catch {
+    throw new Error(`SITE_URL is not a valid URL: ${v}`);
+  }
+  // The site is served from the root of its domain.
+  if (url.pathname !== '/' || url.search || url.hash || url.username || url.password) throw new Error('SITE_URL must be just the scheme and host, e.g. https://pdf.example.com');
+  return url.origin;
+}
+
 function parsePacks(raw) {
   if (!raw) return DEFAULT_PACKS;
   let list;
@@ -55,8 +81,7 @@ function parsePacks(raw) {
 export function loadConfig(env = process.env) {
   // ":memory:" keeps everything in RAM (used by tests).
   const dataDir = env.DATA_DIR === ':memory:' ? ':memory:' : path.resolve(ROOT, env.DATA_DIR || 'data');
-  let siteUrl = String(env.SITE_URL || '').trim().replace(/\/+$/, '');
-  if (siteUrl && !/^https?:\/\//i.test(siteUrl)) siteUrl = `https://${siteUrl}`;
+  const siteUrl = parseSiteUrl(env.SITE_URL);
 
   const freePages = int(env.FREE_PAGES, 5, 0, 100000);
   const packs = parsePacks(env.PACKS);
@@ -66,7 +91,8 @@ export function loadConfig(env = process.env) {
   const bank = bankInput ? findBank(bankInput) : null;
   if (bankInput && !bank) throw new Error(`Unknown bank "${bankInput}". Use a 6-digit BIN (BANK_BIN) or one of: ${BANKS.map((b) => b.code).join(', ')}`);
   const bankAccount = String(env.BANK_ACCOUNT || '').replace(/\s+/g, '');
-  if (bankAccount && !/^[A-Za-z0-9]{4,24}$/.test(bankAccount)) throw new Error('BANK_ACCOUNT must be 4-24 letters or digits');
+  // NAPAS (VietQR) account numbers have at most 19 characters.
+  if (bankAccount && !/^[A-Za-z0-9]{4,19}$/.test(bankAccount)) throw new Error('BANK_ACCOUNT must be 4-19 letters or digits');
   let orderPrefix = String(env.ORDER_PREFIX || 'PE').toUpperCase().replace(/[^A-Z]/g, '');
   if (orderPrefix.length < 2 || orderPrefix.length > 6) orderPrefix = 'PE';
   const bankEnabled = !!(bank && bankAccount);
@@ -98,7 +124,7 @@ export function loadConfig(env = process.env) {
     contactEmail: String(env.CONTACT_EMAIL || '').trim(),
     dataDir,
     distDir: path.resolve(ROOT, env.DIST_DIR || 'dist'),
-    trustProxy: bool(env.TRUST_PROXY, false),
+    trustProxy: parseTrustProxy(env.TRUST_PROXY),
     sessionSecret: String(env.SESSION_SECRET || ''),
     adminToken: String(env.ADMIN_TOKEN || ''),
     free: {

@@ -1,5 +1,6 @@
 // Small HTTP helpers: JSON bodies, cookies, client address, rate limiting.
 import crypto from 'node:crypto';
+import net from 'node:net';
 
 export class HttpError extends Error {
   constructor(status, code, message, extra = {}) {
@@ -10,28 +11,43 @@ export class HttpError extends Error {
   }
 }
 
-/** Reads the request body (raw Buffer), refusing anything above `limit`. */
+/**
+ * Reads the request body (raw Buffer), refusing anything above `limit`. A
+ * refused body is not read any further; the 413 answer closes the connection
+ * (see app.mjs) so that the client gets the response instead of a reset.
+ */
 export function readBody(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
+    const tooLarge = () => new HttpError(413, 'too_large', 'Request body too large', { close: true });
     const length = Number(req.headers['content-length'] || 0);
     if (length > limit) {
-      reject(new HttpError(413, 'too_large', 'Request body too large'));
-      req.resume();
+      reject(tooLarge());
       return;
     }
     const chunks = [];
     let size = 0;
+    let done = false;
     req.on('data', (c) => {
+      if (done) return;
       size += c.length;
       if (size > limit) {
-        reject(new HttpError(413, 'too_large', 'Request body too large'));
-        req.destroy();
+        done = true;
+        chunks.length = 0;
+        reject(tooLarge());
         return;
       }
       chunks.push(c);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    req.on('end', () => {
+      if (done) return;
+      done = true;
+      resolve(Buffer.concat(chunks));
+    });
+    req.on('error', (e) => {
+      if (done) return;
+      done = true;
+      reject(e);
+    });
   });
 }
 
@@ -64,12 +80,12 @@ export function redirect(res, location, status = 302) {
 }
 
 export function parseCookies(header) {
-  const out = {};
+  const out = Object.create(null);
   for (const part of String(header || '').split(';')) {
     const i = part.indexOf('=');
     if (i < 0) continue;
     const k = part.slice(0, i).trim();
-    if (!k || k in out) continue;
+    if (!k || Object.hasOwn(out, k)) continue;
     try {
       out[k] = decodeURIComponent(part.slice(i + 1).trim());
     } catch {
@@ -89,17 +105,63 @@ export function safeEqual(a, b) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
-/** Address of the client; proxy headers are only believed when configured. */
+/**
+ * Address of the client. Proxy headers are only believed when configured:
+ * `trustProxy` is the number of reverse proxies in front of the server (each
+ * one appends the address it saw to X-Forwarded-For, so the client is the
+ * entry that many places from the end; entries further left were written by
+ * the client itself and prove nothing), or 'cloudflare' to use the
+ * CF-Connecting-IP header that Cloudflare sets.
+ */
 export function clientIp(req, trustProxy) {
-  if (trustProxy) {
-    const cf = req.headers['cf-connecting-ip'];
-    if (cf) return String(cf).trim();
-    const xff = req.headers['x-forwarded-for'];
-    if (xff) return String(xff).split(',')[0].trim();
-    const real = req.headers['x-real-ip'];
-    if (real) return String(real).trim();
+  const socketIp = (req.socket && req.socket.remoteAddress) || '';
+  if (trustProxy === 'cloudflare') {
+    const cf = String(req.headers['cf-connecting-ip'] || '').trim();
+    return cf || socketIp;
   }
-  return (req.socket && req.socket.remoteAddress) || '';
+  const hops = Number(trustProxy) || 0;
+  if (hops > 0) {
+    const list = String(req.headers['x-forwarded-for'] || '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean);
+    if (list.length) return list[Math.max(0, list.length - hops)];
+    const real = String(req.headers['x-real-ip'] || '').trim();
+    if (real) return real;
+  }
+  return socketIp;
+}
+
+function ipv6Groups(s) {
+  // An IPv4 address written at the end (::ffff:1.2.3.4, 64:ff9b::1.2.3.4).
+  const v4 = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(s);
+  if (v4) {
+    const b = v4.slice(1).map(Number);
+    s = `${s.slice(0, v4.index)}${((b[0] << 8) | b[1]).toString(16)}:${((b[2] << 8) | b[3]).toString(16)}`;
+  }
+  const [head, tail] = s.split('::');
+  const h = head ? head.split(':') : [];
+  const t = tail ? tail.split(':') : [];
+  const fill = s.includes('::') ? Array(Math.max(0, 8 - h.length - t.length)).fill('0') : [];
+  return [...h, ...fill, ...t].map((x) => parseInt(x, 16) || 0);
+}
+
+/**
+ * The unit that per-address limits count: an IPv4 address, or the /64
+ * network of an IPv6 address (one subscriber gets a whole /64 and can pick
+ * any address in it).
+ */
+export function ipKey(ip) {
+  const s = String(ip || '').trim().replace(/%.*$/, '');
+  if (!s) return '';
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(s);
+  if (mapped) return mapped[1];
+  if (net.isIPv4(s)) return s;
+  if (!net.isIPv6(s)) return s.slice(0, 64);
+  return `${ipv6Groups(s)
+    .slice(0, 4)
+    .map((g) => g.toString(16))
+    .join(':')}::/64`;
 }
 
 export function isSecure(req, trustProxy) {

@@ -166,6 +166,8 @@ export class ToolController {
   }
 
   startPan(e) {
+    // Fingers and pens scroll natively (smoother, with momentum).
+    if (e.pointerType && e.pointerType !== 'mouse') return;
     const c = this.viewer.container;
     const sx = e.clientX;
     const sy = e.clientY;
@@ -180,9 +182,11 @@ export class ToolController {
       c.classList.remove('panning');
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
     e.preventDefault();
   }
 

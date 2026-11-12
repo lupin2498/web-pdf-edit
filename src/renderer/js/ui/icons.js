@@ -11,6 +11,12 @@ const P = {
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  zap: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  devices: '<rect x="2" y="4" width="14" height="10" rx="1.5"/><path d="M6 18h6M9 14v4"/><rect x="17" y="8" width="5" height="12" rx="1.2"/><path d="M19.5 17.5v.01"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+  cloudOff: '<path d="M3 3l18 18"/><path d="M8.5 6.6A6 6 0 0 1 17.7 10H18a4 4 0 0 1 2.3 7.3M16 19H7a5 5 0 0 1-1.6-9.7"/>',
+  arrowRight: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  wallet: '<path d="M4 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/><path d="M16 13.5h.01"/><path d="M20 11h-4a2 2 0 0 0 0 5h4"/>',
   home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
@@ -144,3 +150,6 @@ export function iconHtml(name) {
 }
 
 export const ICON_NAMES = Object.keys(P);
+
+// The raw path data, for pages rendered outside the browser (site build).
+export const ICON_PATHS = P;

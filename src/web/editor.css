@@ -1,0 +1,9 @@
+/* Styles of the editor page: interface font, the desktop editor styles and
+   the web overrides (in this order). */
+@import '@fontsource/be-vietnam-pro/400.css';
+@import '@fontsource/be-vietnam-pro/500.css';
+@import '@fontsource/be-vietnam-pro/600.css';
+@import '@fontsource/be-vietnam-pro/700.css';
+@import '@fontsource/be-vietnam-pro/800.css';
+@import '../renderer/css/app.css';
+@import './web.css';

@@ -7,6 +7,11 @@ import { vi as webVi, en as webEn } from '../../web/locales.js';
 const dicts = { vi: { ...vi, ...webVi }, en: { ...en, ...webEn } };
 let lang = 'vi';
 
+/** Replaces a string in every language (e.g. the brand name). */
+export function overrideString(key, value) {
+  for (const d of Object.values(dicts)) d[key] = value;
+}
+
 export function setLanguage(l) {
   lang = dicts[l] ? l : 'vi';
   document.documentElement.lang = lang;

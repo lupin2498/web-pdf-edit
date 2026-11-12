@@ -43,11 +43,14 @@ export class App {
     window.api.onRequestClose(() => this.requestQuit());
     const params = new URLSearchParams(location.search);
     const tool = params.get('tool');
+    const buy = params.get('buy');
     const handoff = params.get('open') === 'handoff';
     const initial = await window.api.initialFiles();
     if (handoff && !(initial && initial.length)) toast(t('web.handoffFailed'), { type: 'error', timeout: 6000 });
+    if (params.has('lang') || buy) history.replaceState(null, '', location.pathname + (tool ? `?tool=${encodeURIComponent(tool)}` : '') + location.hash);
     await this.startWith(tool, initial || []);
     this.refreshRecent();
+    if (buy) openPaywall(null, { packId: buy });
   }
 
   // Starts the task a landing page asked for (?tool=...), with the files
@@ -70,6 +73,7 @@ export class App {
       text: () => F.convert.toText(doc),
       protect: () => F.security.setPassword(doc),
       sign: () => this.selectRibbonTab('comment'),
+      annotate: () => this.selectRibbonTab('comment'),
       convert: () => this.selectRibbonTab('convert'),
     }[tool];
     if (run) {
@@ -343,10 +347,10 @@ export class App {
     }
     this.ribbonTabsEl.appendChild(h('div', { class: 'ribbon-tabs-spacer', style: { flex: '1' } }));
     this.downloadBtn = h('button', { class: 'download-btn', 'data-cmd': 'download', disabled: true, 'data-tip': `${t('web.download')} (Ctrl+S)`, onclick: () => this.save(this.activeDoc) }, icon('download'), h('span', null, t('web.download')));
-    this.ribbonTabsEl.appendChild(this.downloadBtn);
     this.ribbonTabsEl.appendChild(h('button', { class: 'icon-btn', 'data-tip': t('panel.search'), onclick: () => this.activeDoc && this.activeDoc.togglePanel('search', true) }, icon('search')));
     this.ribbonTabsEl.appendChild(h('button', { class: 'icon-btn', 'data-tip': t('props.title'), onclick: () => this.activeDoc && this.activeDoc.toggleProps() }, icon('panelRight')));
     this.ribbonTabsEl.appendChild(h('button', { class: 'icon-btn', 'data-tip': t('settings.title'), onclick: () => this.features.settings.open(this) }, icon('settings')));
+    this.ribbonTabsEl.appendChild(this.downloadBtn);
   }
 
   selectRibbonTab(id) {

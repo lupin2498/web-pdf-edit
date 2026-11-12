@@ -2,7 +2,8 @@
 import { installWebApi } from '../../web/api.js';
 import { App } from './app.js';
 import { loadSettings, saveSettings, settings } from './settings.js';
-import { setLanguage } from './i18n.js';
+import { setLanguage, overrideString } from './i18n.js';
+import { readConfig } from '../../web/config.js';
 import { installTooltips } from './ui/dialogs.js';
 import { loadSystemFonts } from './pdf/fonts.js';
 
@@ -16,6 +17,9 @@ async function main() {
   if (!lang) lang = /^vi/i.test(navigator.language || 'vi') ? 'vi' : 'en';
   if (asked && lang !== settings.language) saveSettings({ language: lang });
   setLanguage(lang);
+  // The brand shown in the editor follows the SITE_NAME setting.
+  const { siteName } = readConfig();
+  if (siteName) overrideString('app.name', siteName);
   // Theme: the saved choice, else the system preference.
   const dark = settings.theme ? settings.theme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';

@@ -5,6 +5,7 @@ import { colorSwatches, numberInput, slider, segmented, selectInput, propRow, PA
 import { registry } from '../pdf/fonts.js';
 import { settings, saveSettings } from '../settings.js';
 import { t } from '../i18n.js';
+import { adSlot } from '../../../web/ads.js';
 
 export const DEFAULT_STYLES = {
   highlight: { color: [1, 0.92, 0.23], opacity: 0.5 },
@@ -35,7 +36,14 @@ export class PropertiesPanel {
     this.docView = docView;
     this.title = h('span', null, t('props.title'));
     this.body = h('div', { class: 'props-body' });
-    this.el = h('div', { class: 'props-panel' }, h('div', { class: 'panel-header' }, this.title, h('div', { class: 'ph-actions' }, h('button', { class: 'icon-btn', 'data-tip': t('props.hide'), onclick: () => this.docView.toggleProps(false) }, icon('panelRight')))), this.body);
+    // One ad per open document, shown while nothing is selected. It is
+    // created once so that the ad is not reloaded at every selection.
+    this.ad = adSlot('app_side');
+    this.el = h('div', { class: 'props-panel' }, h('div', { class: 'panel-header' }, this.title, h('div', { class: 'ph-actions' }, h('button', { class: 'icon-btn', 'data-tip': t('props.hide'), onclick: () => this.docView.toggleProps(false) }, icon('panelRight')))), this.body, this.ad);
+  }
+
+  showAd(show) {
+    this.ad.classList.toggle('props-ad-off', !show);
   }
 
   get session() {
@@ -46,12 +54,14 @@ export class PropertiesPanel {
     const overlay = this.docView.overlay;
     const editMode = this.docView.editMode;
     clear(this.body);
+    this.showAd(false);
     const obj = overlay.selectedObject();
     if (obj) return this.renderObject(obj);
     if (overlay.selection && overlay.selection.kind === 'annot') return this.renderAnnot(overlay.selection);
     if (editMode.active && editMode.selectedImage) return this.renderEditImage();
     const tool = this.docView.tools.tool;
     if (DEFAULT_STYLES[tool]) return this.renderTool(tool);
+    this.showAd(true);
     this.title.textContent = t('props.title');
     const hint = editMode.active ? t('props.editHint') : t('props.emptyHint');
     this.body.appendChild(h('div', { class: 'props-empty' }, hint));

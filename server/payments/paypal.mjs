@@ -37,11 +37,16 @@ export class PayPal {
     return this.cached.value;
   }
 
-  async call(method, pathname, { body = null, requestId = null, prefer = null } = {}) {
+  async call(method, pathname, { body = null, requestId = null, prefer = null } = {}, retried = false) {
     const headers = { Authorization: `Bearer ${await this.token()}`, 'Content-Type': 'application/json', Accept: 'application/json' };
     if (requestId) headers['PayPal-Request-Id'] = requestId;
     if (prefer) headers.Prefer = prefer;
     const res = await this.fetch(`${this.apiBase}${pathname}`, { method, headers, body: body ? JSON.stringify(body) : method === 'POST' ? '{}' : undefined, signal: AbortSignal.timeout(30000) });
+    // A cached token that PayPal no longer accepts: get a new one, once.
+    if (res.status === 401 && !retried) {
+      this.cached = null;
+      return this.call(method, pathname, { body, requestId, prefer }, true);
+    }
     const data = await res.json().catch(() => null);
     return { ok: res.ok, status: res.status, data };
   }
@@ -87,7 +92,10 @@ export class PayPal {
    */
   async capture(paypalOrderId) {
     const id = encodeURIComponent(paypalOrderId);
-    let r = await this.call('POST', `/v2/checkout/orders/${id}/capture`, { requestId: `capture-${paypalOrderId}`, prefer: 'return=representation' });
+    // A fresh request id per attempt: with a fixed one PayPal would answer a
+    // retry (after the buyer picked another card) with the cached refusal. A
+    // second capture of a captured order fails with ORDER_ALREADY_CAPTURED.
+    let r = await this.call('POST', `/v2/checkout/orders/${id}/capture`, { requestId: `capture-${paypalOrderId}-${crypto.randomBytes(4).toString('hex')}`, prefer: 'return=representation' });
     const issue = r.data && r.data.details && r.data.details[0] && r.data.details[0].issue;
     // Captured by an earlier call (for example the buyer reloaded the page).
     if (!r.ok && issue === 'ORDER_ALREADY_CAPTURED') r = await this.call('GET', `/v2/checkout/orders/${id}`);

@@ -93,15 +93,15 @@ export async function restoreDialog() {
  * { pages, missing, name }. Resolves to true once the balance covers
  * `need.pages` (or, without `need`, after any purchase).
  */
-export function openPaywall(need = null) {
+export function openPaywall(need = null, { packId = null } = {}) {
   if (openPromise) return openPromise;
-  openPromise = runPaywall(need).finally(() => {
+  openPromise = runPaywall(need, packId).finally(() => {
     openPromise = null;
   });
   return openPromise;
 }
 
-async function runPaywall(need) {
+async function runPaywall(need, packId = null) {
   const config = billing.config;
   const providers = config.providers.filter((p) => config.packs.some((pk) => packPrice(pk, p)));
   let provider = providers[0] || null;
@@ -112,7 +112,7 @@ async function runPaywall(need) {
     const cover = usable.find((p) => p.pages >= missingNow());
     return (need && missingNow() > 0 ? cover || usable[usable.length - 1] : usable.find((p) => p.popular) || usable[0]) || null;
   };
-  let pack = defaultPack();
+  let pack = (packId && config.packs.find((p) => p.id === packId && packPrice(p, provider))) || defaultPack();
   let purchased = false;
   let timers = [];
   let currentOrder = null;

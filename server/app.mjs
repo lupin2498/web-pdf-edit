@@ -5,10 +5,11 @@ import path from 'node:path';
 import { openDatabase } from './db.mjs';
 import { Billing, BillingError, newAccountId } from './billing.mjs';
 import { publicConfig } from './config.mjs';
-import { createStatic, inlineJson } from './static.mjs';
+import { createStatic, inlineJson, escapeHtml } from './static.mjs';
+import { packsHtml } from '../src/site/pricing-html.mjs';
 import { vietQrPayload } from './payments/vietqr.mjs';
 import { PayPal } from './payments/paypal.mjs';
-import { HttpError, readBody, parseJson, sendJson, sendText, redirect, parseCookies, signValue, safeEqual, clientIp, isSecure, createLimiter } from './http.mjs';
+import { HttpError, readBody, parseJson, sendJson, sendText, redirect, parseCookies, signValue, safeEqual, clientIp, ipKey, isSecure, createLimiter } from './http.mjs';
 
 const COOKIE = 'pe_sid';
 const COOKIE_MAX_AGE = 2 * 365 * 24 * 60 * 60;
@@ -63,7 +64,18 @@ export async function createApp(config, { clock = () => Date.now(), fetchImpl = 
   const statics = createStatic({
     distDir: config.distDir,
     watch: process.env.NODE_ENV !== 'production',
-    vars: { PUBLIC_CONFIG: inlineJson(pub), HEAD_EXTRA: headExtra(config), SITE_URL: config.siteUrl, SITE_NAME: config.siteName },
+    // HEAD_EXTRA is HTML written by the operator (ad and analytics tags).
+    vars: {
+      PUBLIC_CONFIG: inlineJson(pub),
+      HEAD_EXTRA: headExtra(config),
+      SITE_URL: escapeHtml(config.siteUrl),
+      SITE_NAME: escapeHtml(config.siteName),
+      FREE_PAGES: String(config.free.pages),
+      CONTACT_EMAIL: escapeHtml(config.contactEmail || '—'),
+      // Price cards follow the PACKS setting (see src/site/pricing-html.mjs).
+      PRICING_VI: packsHtml(pub, 'vi'),
+      PRICING_EN: packsHtml(pub, 'en'),
+    },
   });
   const csp = hasThirdParty(config) ? "frame-ancestors 'self'" : STRICT_CSP;
 
@@ -73,7 +85,8 @@ export async function createApp(config, { clock = () => Date.now(), fetchImpl = 
 
   function context(req, res) {
     const url = new URL(req.url, 'http://localhost');
-    const ip = clientIp(req, config.trustProxy);
+    // Per-address limits count IPv4 addresses and IPv6 /64 networks.
+    const ip = ipKey(clientIp(req, config.trustProxy));
     const ctx = { req, res, url, path: url.pathname, ip, ipHash: hashIp(ip), secure: isSecure(req, config.trustProxy) || /^https:/i.test(config.siteUrl), cookies: parseCookies(req.headers.cookie), sessionId: null };
     ctx.origin = () => {
       if (config.siteUrl) return config.siteUrl;
@@ -294,8 +307,10 @@ export async function createApp(config, { clock = () => Date.now(), fetchImpl = 
       const content = [body.content, body.description, body.code].filter((x) => typeof x === 'string' && x).join(' ');
       const paymentId = body.id !== undefined && body.id !== null && body.id !== '' ? `sepay-${body.id}` : `sepay-ref-${crypto.createHash('sha1').update(`${body.referenceCode}|${body.transactionDate}|${amount}|${content}`).digest('hex').slice(0, 24)}`;
       const incoming = String(body.transferType || 'in').toLowerCase() === 'in' && amount > 0;
-      const account = String(body.accountNumber || '').replace(/[^A-Za-z0-9]/g, '');
-      const ours = !account || account.toUpperCase() === b.account.toUpperCase();
+      // With a virtual account (VA) the QR carries the VA number, which SePay
+      // reports as subAccount next to the main account number.
+      const reported = [body.accountNumber, body.subAccount].map((x) => String(x || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase()).filter(Boolean);
+      const ours = !reported.length || reported.includes(b.account.toUpperCase());
       let result = { status: 'ignored' };
       if (incoming && ours) result = billing.settleBankTransfer({ paymentId, amount, content, raw: raw.toString('utf8') });
       else if (incoming) result = billing.recordUnmatched({ provider: 'bank', paymentId, amount, currency: 'VND', content, raw: raw.toString('utf8') });
@@ -320,6 +335,11 @@ export async function createApp(config, { clock = () => Date.now(), fetchImpl = 
         }
         if (!cap.completed) {
           log.warn(`paypal capture not completed for ${order.code}: ${cap.issue}`);
+          return redirect(res, `/pay/done/?status=failed&order=${order.id}`);
+        }
+        // The capture must belong to this order (custom_id is our order id).
+        if (cap.customId && cap.customId !== order.id) {
+          log.error(`paypal capture ${cap.captureId} belongs to ${cap.customId}, not ${order.id}`);
           return redirect(res, `/pay/done/?status=failed&order=${order.id}`);
         }
         const r = billing.recordPayment({ provider: 'paypal', paymentId: cap.captureId, orderId: order.id, amount: cap.cents, currency: cap.currency, content: token, raw: JSON.stringify(cap.raw) });
@@ -388,6 +408,26 @@ export async function createApp(config, { clock = () => Date.now(), fetchImpl = 
     return lines.join('\n') + (lines.length ? '\n' : '');
   }
 
+  // The installable app (PWA) carries the configured site name.
+  function webManifest() {
+    return {
+      name: config.siteName,
+      short_name: config.siteName.slice(0, 12),
+      description: 'PDF editor',
+      start_url: '/app/',
+      scope: '/',
+      display: 'standalone',
+      background_color: '#f3f4f8',
+      theme_color: '#151d33',
+      icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+        { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' },
+      ],
+      file_handlers: [{ action: '/app/', accept: { 'application/pdf': ['.pdf'] } }],
+    };
+  }
+
   function robotsTxt(ctx) {
     return `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin/\nDisallow: /pay/\n\nSitemap: ${ctx.origin()}/sitemap.xml\n`;
   }
@@ -397,8 +437,8 @@ export async function createApp(config, { clock = () => Date.now(), fetchImpl = 
     const urls = statics.pages
       .filter((pg) => pg.index !== false)
       .map((pg) => {
-        const alt = (pg.alternates || []).map((a) => `\n    <xhtml:link rel="alternate" hreflang="${a.lang}" href="${origin}${a.path}"/>`).join('');
-        return `  <url>\n    <loc>${origin}${pg.path}</loc>${alt}\n    <changefreq>${pg.changefreq || 'weekly'}</changefreq>\n    <priority>${pg.priority || '0.7'}</priority>\n  </url>`;
+        const alt = (pg.alternates || []).map((a) => `\n    <xhtml:link rel="alternate" hreflang="${escapeHtml(a.lang)}" href="${escapeHtml(origin + a.path)}"/>`).join('');
+        return `  <url>\n    <loc>${escapeHtml(origin + pg.path)}</loc>${alt}\n    <changefreq>${escapeHtml(pg.changefreq || 'weekly')}</changefreq>\n    <priority>${escapeHtml(pg.priority || '0.7')}</priority>\n  </url>`;
       });
     return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls.join('\n')}\n</urlset>\n`;
   }
@@ -424,6 +464,8 @@ export async function createApp(config, { clock = () => Date.now(), fetchImpl = 
         throw new HttpError(405, 'method_not_allowed', 'Method not allowed');
       } else if (p === '/healthz') {
         sendJson(res, 200, { ok: true });
+      } else if (p === '/manifest.webmanifest') {
+        sendText(res, 200, JSON.stringify(webManifest()), 'application/manifest+json; charset=utf-8', { 'Cache-Control': 'public, max-age=3600' });
       } else if (p === '/ads.txt') {
         const body = adsTxt();
         if (!body) throw new HttpError(404, 'not_found', 'Not found');
@@ -443,6 +485,8 @@ export async function createApp(config, { clock = () => Date.now(), fetchImpl = 
         res.destroy();
       } else if (e instanceof HttpError || e instanceof BillingError) {
         const headers = e.extra && e.extra.retryAfter ? { 'Retry-After': String(e.extra.retryAfter) } : {};
+        // The rest of a refused body is not read: close the connection.
+        if (e.extra && e.extra.close) headers.Connection = 'close';
         if (ctx.path.startsWith('/api/')) sendJson(res, e.status, { error: e.code, message: e.message }, headers);
         else sendText(res, e.status, e.message, 'text/plain; charset=utf-8', headers);
       } else {

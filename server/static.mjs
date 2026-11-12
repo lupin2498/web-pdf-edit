@@ -18,6 +18,11 @@ const TYPES = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.avif': 'image/avif',
+  '.pdf': 'application/pdf',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
   '.ico': 'image/x-icon',
   '.ttf': 'font/ttf',
   '.otf': 'font/otf',
@@ -47,6 +52,37 @@ export function inlineJson(value) {
   return JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 }
 
+/** Escapes text for HTML element content and attribute values. */
+export function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+/** Encodings the client accepts (an encoding with q=0 is refused). */
+export function acceptedEncodings(header) {
+  const out = new Set();
+  for (const part of String(header || '').split(',')) {
+    const [name, ...params] = part.trim().toLowerCase().split(';');
+    if (!name) continue;
+    const q = params.map((x) => x.trim()).find((x) => x.startsWith('q='));
+    if (q && !(parseFloat(q.slice(2)) > 0)) continue;
+    out.add(name.trim());
+  }
+  if (out.has('*')) for (const e of ['br', 'gzip']) out.add(e);
+  return out;
+}
+
+/** If-None-Match comparison (weak, as RFC 9110 requires for GET/HEAD). */
+export function etagMatches(header, etag) {
+  if (!header) return false;
+  const want = etag.replace(/^W\//, '');
+  return String(header)
+    .split(',')
+    .some((t) => {
+      const v = t.trim().replace(/^W\//, '');
+      return v === '*' || v === want;
+    });
+}
+
 /** Fills the %%NAME%% placeholders of a built HTML page. */
 export function renderHtml(html, vars) {
   return html.replace(/%%([A-Z_]+)%%/g, (m, key) => (Object.prototype.hasOwnProperty.call(vars, key) ? String(vars[key]) : m));
@@ -72,7 +108,23 @@ export function createStatic({ distDir, vars = {}, watch = false }) {
         if (e.isDirectory()) walk(full, urlPath);
         else if (!/\.(br|gz)$/.test(e.name) && e.name !== 'build.json') {
           const st = fs.statSync(full);
-          next.set(urlPath, { file: full, size: st.size, mtime: st.mtimeMs, type: TYPES[path.extname(e.name).toLowerCase()] || 'application/octet-stream', html: e.name.endsWith('.html') });
+          // Pre-compressed copies written by the build (sizes, or null).
+          const sizeOf = (f) => {
+            try {
+              return fs.statSync(f).size;
+            } catch {
+              return null;
+            }
+          };
+          next.set(urlPath, {
+            file: full,
+            size: st.size,
+            mtime: st.mtimeMs,
+            type: TYPES[path.extname(e.name).toLowerCase()] || 'application/octet-stream',
+            html: e.name.endsWith('.html'),
+            br: sizeOf(`${full}.br`),
+            gzip: sizeOf(`${full}.gz`),
+          });
         }
       }
     };
@@ -100,14 +152,16 @@ export function createStatic({ distDir, vars = {}, watch = false }) {
   };
 
   const htmlBody = (entry) => {
-    if (!entry.body) {
-      const text = renderHtml(fs.readFileSync(entry.file, 'utf8'), vars);
-      entry.body = Buffer.from(text, 'utf8');
-      entry.etag = `"${crypto.createHash('sha1').update(entry.body).digest('base64url').slice(0, 20)}"`;
-      entry.gz = zlib.gzipSync(entry.body, { level: 6 });
-      entry.br = zlib.brotliCompressSync(entry.body, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } });
+    if (!entry.rendered) {
+      const body = Buffer.from(renderHtml(fs.readFileSync(entry.file, 'utf8'), vars), 'utf8');
+      entry.rendered = {
+        body,
+        etag: crypto.createHash('sha1').update(body).digest('base64url').slice(0, 20),
+        gzip: zlib.gzipSync(body, { level: 6 }),
+        br: zlib.brotliCompressSync(body, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } }),
+      };
     }
-    return entry;
+    return entry.rendered;
   };
 
   const resolve = (pathname) => {
@@ -117,10 +171,12 @@ export function createStatic({ distDir, vars = {}, watch = false }) {
     } catch {
       return null;
     }
-    if (p.includes('\0') || p.split('/').includes('..')) return null;
+    if (p.includes('\0') || p.split(/[\\/]/).includes('..')) return null;
     if (p.endsWith('/')) return files.has(`${p}index.html`) ? { path: `${p}index.html` } : null;
     if (files.has(p)) return { path: p };
-    if (files.has(`${p}/index.html`)) return { redirect: `${p}/` };
+    // The Location keeps the request's own (percent-encoded) spelling: a
+    // decoded non-ASCII path is not a valid header value.
+    if (files.has(`${p}/index.html`)) return { redirect: `${pathname}/` };
     return null;
   };
 
@@ -139,49 +195,32 @@ export function createStatic({ distDir, vars = {}, watch = false }) {
       return true;
     }
     const entry = files.get(hit.path);
-    const accept = String(req.headers['accept-encoding'] || '');
+    const accepted = acceptedEncodings(req.headers['accept-encoding']);
     const headers = { 'Content-Type': entry.type, 'Cache-Control': cacheControl(hit.path), Vary: 'Accept-Encoding' };
-    let body;
+    let body = null;
     let stream = null;
+    let encoding = null;
+    let tag;
     if (entry.html) {
-      htmlBody(entry);
-      headers.ETag = entry.etag;
-      if (status === 200 && req.headers['if-none-match'] === entry.etag) {
-        res.writeHead(304, headers);
-        res.end();
-        return true;
-      }
-      if (/\bbr\b/.test(accept)) {
-        body = entry.br;
-        headers['Content-Encoding'] = 'br';
-      } else if (/\bgzip\b/.test(accept)) {
-        body = entry.gz;
-        headers['Content-Encoding'] = 'gzip';
-      } else body = entry.body;
+      const r = htmlBody(entry);
+      encoding = accepted.has('br') ? 'br' : accepted.has('gzip') ? 'gzip' : null;
+      body = encoding ? r[encoding] : r.body;
+      tag = r.etag;
     } else {
-      headers.ETag = `"${entry.size.toString(36)}-${Math.round(entry.mtime).toString(36)}"`;
+      encoding = accepted.has('br') && entry.br !== null ? 'br' : accepted.has('gzip') && entry.gzip !== null ? 'gzip' : null;
+      stream = encoding ? `${entry.file}${encoding === 'br' ? '.br' : '.gz'}` : entry.file;
+      headers['Content-Length'] = encoding ? entry[encoding] : entry.size;
       headers['Last-Modified'] = new Date(entry.mtime).toUTCString();
-      if (req.headers['if-none-match'] === headers.ETag) {
-        res.writeHead(304, headers);
-        res.end();
-        return true;
-      }
-      let file = entry.file;
-      let size = entry.size;
-      for (const [enc, ext, re] of [['br', '.br', /\bbr\b/], ['gzip', '.gz', /\bgzip\b/]]) {
-        if (!re.test(accept)) continue;
-        try {
-          const st = fs.statSync(entry.file + ext);
-          file = entry.file + ext;
-          size = st.size;
-          headers['Content-Encoding'] = enc;
-          break;
-        } catch {
-          /* no pre-compressed copy */
-        }
-      }
-      headers['Content-Length'] = size;
-      stream = file;
+      tag = `${entry.size.toString(36)}-${Math.round(entry.mtime).toString(36)}`;
+    }
+    // Each encoding is a different representation, so it gets its own ETag.
+    headers.ETag = `"${tag}${encoding ? `-${encoding}` : ''}"`;
+    if (encoding) headers['Content-Encoding'] = encoding;
+    if (status === 200 && etagMatches(req.headers['if-none-match'], headers.ETag)) {
+      delete headers['Content-Length'];
+      res.writeHead(304, headers);
+      res.end();
+      return true;
     }
     if (body) headers['Content-Length'] = body.length;
     res.writeHead(status, headers);

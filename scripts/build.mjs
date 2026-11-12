@@ -43,16 +43,14 @@ if (fs.existsSync(publicDir)) fs.cpSync(publicDir, outdir, { recursive: true });
 // ---------------------------------------------------------------- bundles
 const entryPoints = {
   app: path.join(root, 'src', 'renderer', 'js', 'main.js'),
-  'app-styles': path.join(root, 'src', 'renderer', 'css', 'app.css'),
+  'app-styles': path.join(root, 'src', 'web', 'editor.css'),
+  site: path.join(root, 'src', 'site', 'site.js'),
+  'site-styles': path.join(root, 'src', 'site', 'site.css'),
+  // A classic script run in <head> before the first paint (no imports).
+  theme: path.join(root, 'src', 'site', 'theme.js'),
+  admin: path.join(root, 'src', 'site', 'admin.js'),
+  pay: path.join(root, 'src', 'site', 'pay.js'),
 };
-for (const [name, file] of [
-  ['site', path.join(root, 'src', 'site', 'site.js')],
-  ['site-styles', path.join(root, 'src', 'site', 'site.css')],
-  ['admin', path.join(root, 'src', 'site', 'admin.js')],
-  ['pay', path.join(root, 'src', 'site', 'pay.js')],
-]) {
-  if (fs.existsSync(file)) entryPoints[name] = file;
-}
 
 const result = await build({
   entryPoints,

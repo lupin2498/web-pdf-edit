@@ -22,6 +22,9 @@ import { getCurrentStamp } from '../features/signature.js';
 
 let clipboard = null;
 
+// Phones and small tablets: the side panels open over the document.
+export const isCompact = () => window.matchMedia('(max-width: 760px)').matches;
+
 export class DocView {
   constructor(app, session) {
     this.app = app;
@@ -139,6 +142,15 @@ export class DocView {
         this.organizer.syncSelection();
       }
     });
+    // On small screens the panels cover the document: a page picked in the
+    // thumbnails, or a tap on the document, closes them.
+    this.sidePanel.addEventListener('click', (e) => {
+      if (isCompact() && this.activePanel === 'thumbnails' && e.target.closest('.thumb')) setTimeout(() => this.togglePanel('thumbnails', false), 120);
+    });
+    this.viewerEl.addEventListener('pointerdown', () => {
+      if (!isCompact()) return;
+      if (this.activePanel) this.togglePanel(this.activePanel, false);
+    });
     this.updateZoomSelect();
   }
 
@@ -178,9 +190,11 @@ export class DocView {
   }
 
   async init() {
+    const compact = isCompact();
+    if (compact) this.toggleProps(false);
     await this.viewer.rebuild();
     this.updatePageStatus();
-    this.togglePanel('thumbnails', true);
+    this.togglePanel('thumbnails', !compact);
     this.tools.setTool('select');
     this.updateBanner();
     this.props.update();

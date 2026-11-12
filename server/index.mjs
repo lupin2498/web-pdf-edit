@@ -50,6 +50,7 @@ server.listen(config.port, config.host, () => {
 });
 
 function shutdown() {
+  server.closeIdleConnections();
   server.close(() => {
     app.close();
     process.exit(0);

@@ -147,7 +147,8 @@ export class Billing {
    * call with the same opId never charges twice.
    */
   consume(accountId, { pages, opId, action = null, ipHash = null, userAgent = null }) {
-    const n = Number(pages);
+    // A number or a string of digits; Number(true) would count as 1 page.
+    const n = typeof pages === 'number' ? pages : typeof pages === 'string' && /^\d{1,9}$/.test(pages.trim()) ? Number(pages) : NaN;
     if (!Number.isInteger(n) || n < 1 || n > MAX_PAGES_PER_OPERATION) throw new BillingError('invalid_pages', 'pages must be a positive whole number');
     if (typeof opId !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(opId)) throw new BillingError('invalid_op', 'opId is required');
     return this.db.transaction(() => {
@@ -417,7 +418,12 @@ export class Billing {
     const order = this.getOrder(orderRef) || this.getOrderByCode(String(orderRef || '').toUpperCase().trim());
     if (!order) throw new BillingError('not_found', 'Order not found', 404);
     if (order.status === 'paid') return { status: 'already_paid', order };
-    return this.recordPayment({ provider: 'manual', paymentId: order.id, orderId: order.id, amount: order.amount, currency: order.currency, content: String(note || '').slice(0, 200) });
+    const text = String(note || '').slice(0, 200);
+    return this.db.transaction(() => {
+      const r = this.recordPayment({ provider: 'manual', paymentId: order.id, orderId: order.id, amount: order.amount, currency: order.currency, content: text });
+      this.db.run('UPDATE orders SET note = ? WHERE id = ?', text ? `confirmed by admin: ${text}` : 'confirmed by admin', order.id);
+      return { ...r, order: this.getOrder(order.id) };
+    });
   }
 
   stats() {
@@ -482,12 +488,14 @@ export class Billing {
   /** Housekeeping, run periodically by the server. */
   cleanup() {
     const now = this.now();
-    this.expireOrders();
-    this.db.run('DELETE FROM ip_usage WHERE day < ?', this.day(now) - 7);
-    // Accounts that never bought anything and have not been seen for a long
-    // time; their usage records go with them.
-    const stale = now - 400 * DAY;
-    this.db.run("DELETE FROM usage WHERE account_id IN (SELECT id FROM accounts WHERE credits = 0 AND last_seen < ? AND id NOT IN (SELECT account_id FROM orders WHERE status = 'paid'))", stale);
-    this.db.run("DELETE FROM accounts WHERE credits = 0 AND last_seen < ? AND id NOT IN (SELECT account_id FROM orders WHERE status = 'paid')", stale);
+    this.db.transaction(() => {
+      this.expireOrders();
+      this.db.run('DELETE FROM ip_usage WHERE day < ?', this.day(now) - 7);
+      // Accounts that never bought anything and have not been seen for a long
+      // time; their usage records go with them.
+      const stale = now - 400 * DAY;
+      this.db.run("DELETE FROM usage WHERE account_id IN (SELECT id FROM accounts WHERE credits = 0 AND last_seen < ? AND id NOT IN (SELECT account_id FROM orders WHERE status = 'paid'))", stale);
+      this.db.run("DELETE FROM accounts WHERE credits = 0 AND last_seen < ? AND id NOT IN (SELECT account_id FROM orders WHERE status = 'paid')", stale);
+    });
   }
 }

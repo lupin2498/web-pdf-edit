@@ -373,6 +373,50 @@ export class Viewer extends EventTarget {
       { passive: false },
     );
     this.linkServices = new Map();
+    this.bindPinch();
+  }
+
+  // Two-finger pinch zooms the document around the fingers (the page itself
+  // does not zoom: the viewer has touch-action: pan-x pan-y).
+  bindPinch() {
+    const c = this.container;
+    let pinch = null;
+    let frame = 0;
+    const metrics = (touches) => {
+      const [a, b] = touches;
+      return { dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+    };
+    c.addEventListener(
+      'touchstart',
+      (e) => {
+        if (e.touches.length === 2) {
+          const m = metrics(e.touches);
+          pinch = { start: m.dist, scale: this.scale, last: m };
+        }
+      },
+      { passive: true },
+    );
+    c.addEventListener(
+      'touchmove',
+      (e) => {
+        if (!pinch || e.touches.length !== 2) return;
+        e.preventDefault();
+        pinch.last = metrics(e.touches);
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          if (!pinch || pinch.start < 10) return;
+          const target = pinch.scale * (pinch.last.dist / pinch.start);
+          if (Math.abs(target - this.scale) / this.scale > 0.01) this.setScale(target, { clientX: pinch.last.x, clientY: pinch.last.y });
+        });
+      },
+      { passive: false },
+    );
+    const end = (e) => {
+      if (e.touches.length < 2) pinch = null;
+    };
+    c.addEventListener('touchend', end, { passive: true });
+    c.addEventListener('touchcancel', end, { passive: true });
   }
 
   emit(type, detail) {
