@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, 'ccr-*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: System packages (pdftotext for PDF checks)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - run: npm ci
+      - name: Browser for end-to-end tests
+        run: npx playwright-core install --with-deps chromium
+      - name: Unit and API tests
+        run: npm test
+      - name: End-to-end tests
+        run: npm run test:e2e
+      - name: Upload test output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: tests/output/
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t pdf-edit-online .
+      - name: Smoke test
+        run: |
+          docker run -d --name pe -p 3000:3000 -e ADMIN_TOKEN=ci-admin-token-123 pdf-edit-online
+          for i in $(seq 1 30); do curl -fsS http://localhost:3000/healthz && break; sleep 1; done
+          curl -fsS http://localhost:3000/ | grep -q 'pe-config'
+          curl -fsS http://localhost:3000/app/ | grep -q 'id="app"'
+          curl -fsS http://localhost:3000/api/me | grep -q '"free"'
+          docker logs pe

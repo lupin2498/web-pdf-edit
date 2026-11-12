@@ -130,11 +130,11 @@ export const vi = {
   'pay.orderCode': 'Mã đơn: {code}',
 
   'ads.label': 'Quảng cáo',
-  'ads.houseTitle': 'Xuất không giới hạn 5 trang',
-  'ads.houseText': 'Mua gói trang để tải xuống tài liệu dài và tắt quảng cáo.',
+  'ads.houseTitle': 'Cần tải xuống nhiều hơn {n} trang?',
+  'ads.houseText': 'Mua gói trang dùng dần, không hết hạn – kèm tắt toàn bộ quảng cáo.',
   'ads.houseCta': 'Xem các gói',
-  'ads.houseTitle2': 'Tệp của bạn luôn riêng tư',
-  'ads.houseText2': 'PDF được xử lý ngay trên trình duyệt, không tải lên máy chủ.',
+  'ads.houseTitle2': 'Làm việc không bị quảng cáo làm phiền',
+  'ads.houseText2': 'Khi còn trang đã mua, mọi quảng cáo đều được ẩn. Gói nhỏ nhất chỉ từ {price}.',
 };
 
 export const en = {
@@ -266,9 +266,9 @@ export const en = {
   'pay.orderCode': 'Order: {code}',
 
   'ads.label': 'Advertisement',
-  'ads.houseTitle': 'Go beyond 5 pages',
-  'ads.houseText': 'Buy a page pack to download long documents and remove ads.',
+  'ads.houseTitle': 'Need more than {n} pages?',
+  'ads.houseText': 'Buy a page pack that never expires – and every ad goes away.',
   'ads.houseCta': 'See packs',
-  'ads.houseTitle2': 'Your files stay private',
-  'ads.houseText2': 'PDFs are processed in your browser and never uploaded.',
+  'ads.houseTitle2': 'Work without ads',
+  'ads.houseText2': 'All ads are hidden while you hold purchased pages. Packs start at {price}.',
 };

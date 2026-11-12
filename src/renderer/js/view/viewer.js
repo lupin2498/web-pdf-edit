@@ -9,6 +9,8 @@ const GAP = 14;
 const PAD_TOP = 18;
 const PAD_BOTTOM = 40;
 const PAD_X = 24;
+// Phones: pages use almost the whole width (see .pages in web.css).
+const padX = () => (window.innerWidth <= 760 ? 6 : PAD_X);
 const MAX_CANVAS_PIXELS = 16 * 1024 * 1024;
 export const ZOOM_STEPS = [0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6.4];
 export const MIN_ZOOM = 0.1;
@@ -686,7 +688,8 @@ export class Viewer extends EventTarget {
     if (!this.container.clientWidth) return this.scale;
     const pv = this.pageViewAt(this.currentIndex) || this.pageViewAt(0);
     const g = (pv && pv.geometry) || this.defaultGeometry;
-    const availW = Math.max(100, this.container.clientWidth - PAD_X * 2 - 14);
+    const scrollbar = this.container.offsetWidth - this.container.clientWidth > 0 ? 0 : 14;
+    const availW = Math.max(100, this.container.clientWidth - padX() * 2 - (window.innerWidth <= 760 ? 0 : scrollbar));
     const availH = Math.max(100, this.container.clientHeight - PAD_TOP - 20);
     const sw = availW / (g.width * CSS_UNITS);
     const sh = availH / (g.height * CSS_UNITS);

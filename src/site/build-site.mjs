@@ -15,7 +15,12 @@ function icon(name, cls = '') {
   return `<svg class="ico${cls ? ` ${cls}` : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${filled ? 1.5 : 1.8}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 }
 
-const LOGO = `<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg-a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff6b6b"/><stop offset="1" stop-color="#d9284b"/></linearGradient><linearGradient id="lg-b" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4f8dff"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient></defs><rect x="3" y="3" width="58" height="58" rx="14" fill="url(#lg-a)"/><path d="M19 11.5h18.6L48 22v30a3 3 0 0 1-3 3H19a3 3 0 0 1-3-3V14.5a3 3 0 0 1 3-3z" fill="#fff"/><path d="M37.3 11.5V19a3 3 0 0 0 3 3H48z" fill="#ffc9d1"/><rect x="20" y="26.5" width="19" height="2.6" rx="1.3" fill="#f29aa8"/><rect x="20" y="32" width="24" height="2.6" rx="1.3" fill="#f29aa8"/><rect x="20" y="37.5" width="14" height="2.6" rx="1.3" fill="#f29aa8"/><g transform="rotate(45 41 41)"><rect x="38.5" y="25" width="5.5" height="23.5" rx="1.2" fill="url(#lg-b)"/><rect x="38.5" y="25" width="5.5" height="4.4" rx="1.2" fill="#9cc2ff"/><path d="M38.5 48.5h5.5l-2.75 6z" fill="#ffe2b8"/></g></svg>`;
+// Gradient ids must be unique in a page (the logo appears twice).
+let logoSeq = 0;
+const logoSvg = () => {
+  const n = ++logoSeq;
+  return `<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg-a${n}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff6b6b"/><stop offset="1" stop-color="#d9284b"/></linearGradient><linearGradient id="lg-b${n}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4f8dff"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient></defs><rect x="3" y="3" width="58" height="58" rx="14" fill="url(#lg-a${n})"/><path d="M19 11.5h18.6L48 22v30a3 3 0 0 1-3 3H19a3 3 0 0 1-3-3V14.5a3 3 0 0 1 3-3z" fill="#fff"/><path d="M37.3 11.5V19a3 3 0 0 0 3 3H48z" fill="#ffc9d1"/><rect x="20" y="26.5" width="19" height="2.6" rx="1.3" fill="#f29aa8"/><rect x="20" y="32" width="24" height="2.6" rx="1.3" fill="#f29aa8"/><rect x="20" y="37.5" width="14" height="2.6" rx="1.3" fill="#f29aa8"/><g transform="rotate(45 41 41)"><rect x="38.5" y="25" width="5.5" height="23.5" rx="1.2" fill="url(#lg-b${n})"/><rect x="38.5" y="25" width="5.5" height="4.4" rx="1.2" fill="#9cc2ff"/><path d="M38.5 48.5h5.5l-2.75 6z" fill="#ffe2b8"/></g></svg>`;
+};
 
 // ---------------------------------------------------------------------------
 // Building blocks
@@ -72,7 +77,7 @@ function header(lang, alternates) {
   return `<a class="skip-link" href="#main">${esc(s.nav.skip)}</a>
     <header class="site-header" data-header>
       <div class="container header-inner">
-        <a class="brand" href="${PAGES.home[lang]}" aria-label="%%SITE_NAME%%">${LOGO}<span>%%SITE_NAME%%</span></a>
+        <a class="brand" href="${PAGES.home[lang]}" aria-label="%%SITE_NAME%%">${logoSvg()}<span>%%SITE_NAME%%</span></a>
         <nav class="main-nav" aria-label="${esc(s.nav.menu)}">
           <div class="nav-item" data-menu>
             <button class="nav-link" type="button" aria-expanded="false" aria-haspopup="true" data-menu-toggle>${esc(s.nav.tools)}${icon('chevronDown', 'caret')}</button>
@@ -105,7 +110,7 @@ function footer(lang, alternates) {
   return `<footer class="site-footer">
       <div class="container footer-grid">
         <div class="footer-brand">
-          <a class="brand" href="${PAGES.home[lang]}">${LOGO}<span>%%SITE_NAME%%</span></a>
+          <a class="brand" href="${PAGES.home[lang]}">${logoSvg()}<span>%%SITE_NAME%%</span></a>
           <p>${esc(s.footer.tagline)}</p>
           <a class="footer-lang" href="${otherPath}" hreflang="${other}" lang="${other}">${icon('globe')}${esc(T[other].langName)}</a>
         </div>
@@ -494,7 +499,7 @@ function appPage(assets) {
   <body class="editor">
     <div id="app">
       <div class="boot" aria-busy="true">
-        <div class="boot-card">${LOGO}<span class="boot-bar"><span></span></span></div>
+        <div class="boot-card">${logoSvg()}<span class="boot-bar"><span></span></span></div>
       </div>
     </div>
     <noscript><div class="noscript">Trình chỉnh sửa cần JavaScript. / The editor needs JavaScript.</div></noscript>
@@ -527,7 +532,7 @@ function payPage(kind, assets) {
   <body class="pay-page" data-pay="${kind}">
     <main class="pay-main">
       <div class="pay-card" data-pay-card>
-        <a class="brand" href="/">${LOGO}<span>%%SITE_NAME%%</span></a>
+        <a class="brand" href="/">${logoSvg()}<span>%%SITE_NAME%%</span></a>
         <div class="pay-state"><span class="spinner"></span></div>
       </div>
     </main>
@@ -554,7 +559,7 @@ function adminPage(assets) {
     <link rel="stylesheet" href="/${assets.css}" />
   </head>
   <body class="admin-page">
-    <header class="admin-header"><div class="container header-inner"><a class="brand" href="/">${LOGO}<span>%%SITE_NAME%%</span></a><span class="admin-tag">Quản trị</span><div class="admin-actions" data-admin-actions></div></div></header>
+    <header class="admin-header"><div class="container header-inner"><a class="brand" href="/">${logoSvg()}<span>%%SITE_NAME%%</span></a><span class="admin-tag">Quản trị</span><div class="admin-actions" data-admin-actions></div></div></header>
     <main class="container admin-main" id="admin"><noscript>Cần bật JavaScript.</noscript></main>
     <script type="module" src="/${assets.admin}"></script>
   </body>

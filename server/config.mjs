@@ -132,7 +132,9 @@ export function loadConfig(env = process.env) {
       // 0 = the free pages never come back; N = they are restored every N days.
       resetDays: int(env.FREE_RESET_DAYS, 0, 0, 3650),
       // Cap on free pages handed out to one IP address per day (all accounts).
-      ipDailyPages: int(env.FREE_IP_DAILY_PAGES, freePages * 4, 0, 1000000),
+      // Generous by default: mobile networks put many people behind one
+      // address, and a newcomer must still see their free pages.
+      ipDailyPages: int(env.FREE_IP_DAILY_PAGES, freePages * 20, 0, 1000000),
     },
     packs,
     orderTtlMinutes: int(env.ORDER_TTL_MINUTES, 60, 5, 7 * 24 * 60),

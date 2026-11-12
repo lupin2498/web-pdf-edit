@@ -20,11 +20,11 @@
     "test:e2e": "npm run build && node --test --test-concurrency=1 \"tests/e2e/**/*.test.mjs\"",
     "test:all": "npm test && npm run test:e2e"
   },
-  "dependencies": {},
   "devDependencies": {
     "@cantoo/fontkit": "2.0.12",
     "@cantoo/pdf-lib": "2.11.1",
     "@fontsource/be-vietnam-pro": "^5.3.0",
+    "@fontsource/dancing-script": "^5.3.0",
     "esbuild": "^0.28.2",
     "fflate": "^0.8.3",
     "pdfjs-dist": "6.4.299",

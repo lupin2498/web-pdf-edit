@@ -183,7 +183,9 @@ function setupDropzone(zone) {
     zone.classList.add('busy');
     prefetchEditor();
     const stored = await handoffStore.put(multiple ? ok : [ok[0]]);
-    location.href = appUrl(stored ? { tool, open: 'handoff' } : { tool });
+    // Without browser storage the editor asks for the file again and then
+    // runs the same task.
+    location.href = appUrl({ tool, open: stored ? 'handoff' : 'retry' });
   };
 
   button.addEventListener('click', (e) => {
@@ -263,9 +265,11 @@ function cachedCredits() {
 configureAds({
   label: strings.adLabel || 'Advertisement',
   adFree: () => config.ads.hideForPaid !== false && cachedCredits() > 0,
-  house: () => {
+  // The page-pack promotion is shown once per page (middle slot); the other
+  // slots only carry network ads.
+  house: (placement) => {
     const h = strings.house;
-    if (!h) return null;
+    if (!h || placement !== 'landing_mid') return null;
     const a = document.createElement('a');
     a.className = 'house-banner';
     a.href = h.href;

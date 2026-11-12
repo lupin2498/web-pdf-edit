@@ -102,6 +102,9 @@ export function openPaywall(need = null, { packId = null } = {}) {
 }
 
 async function runPaywall(need, packId = null) {
+  // The balance may have changed elsewhere (another tab, a bank transfer).
+  await billing.refreshIfStale();
+  if (need && need.pages <= billing.available) return true;
   const config = billing.config;
   const providers = config.providers.filter((p) => config.packs.some((pk) => packPrice(pk, p)));
   let provider = providers[0] || null;
@@ -382,17 +385,10 @@ async function runPaywall(need, packId = null) {
     requestAnimationFrame(() => btn.focus());
   };
 
-  await billing.refreshIfStale();
-  if (closed) return false;
-  if (need && missingNow() === 0) {
-    dlg.close(true);
-    return true;
-  }
   renderSelect();
+  // A bank transfer that arrives after the dialog was closed is still
+  // credited: the order stays open until it expires.
   const result = await dlg.promise;
-  if (currentOrder && currentOrder.id && !purchased) {
-    // A bank transfer may still arrive: the order stays open until it expires.
-  }
   return need ? billing.available >= needed : !!result || purchased;
 }
 

@@ -133,7 +133,7 @@ async function createSignature(doc) {
   widthInput.addEventListener('input', () => (width = parseFloat(widthInput.value)));
   const clearBtn = h('button', { class: 'btn small', onclick: () => { ctx.clearRect(0, 0, W, H); hasInk = false; } }, t('signature.clear'));
   // Typed signature
-  const typed = h('input', { class: 'input', placeholder: t('signature.typePlaceholder'), value: settings.author || '' });
+  const typed = h('input', { class: 'input sig-typed', placeholder: t('signature.typePlaceholder'), value: settings.author || '' });
   typed.addEventListener('keydown', (e) => e.stopPropagation());
   // Image signature
   let imageSig = null;
@@ -178,12 +178,21 @@ async function createSignature(doc) {
           if (mode === 'type') {
             const text = typed.value.trim();
             if (!text) return false;
+            // The handwriting font is loaded on demand; canvas text needs it ready.
+            const font = '600 150px "Dancing Script", "Liberation Serif", "Times New Roman", cursive';
+            try {
+              await document.fonts.load(font, text);
+            } catch {
+              /* falls back to the serif font */
+            }
             const c = document.createElement('canvas');
-            c.width = 1400;
-            c.height = 300;
             const x = c.getContext('2d');
+            x.font = font;
+            // Wide enough for long names (resizing resets the context).
+            c.width = Math.min(6000, Math.ceil(x.measureText(text).width) + 120);
+            c.height = 300;
             x.fillStyle = color;
-            x.font = 'italic 150px "Liberation Serif", "Times New Roman", serif';
+            x.font = font;
             x.textBaseline = 'middle';
             x.fillText(text, 20, 150);
             const trimmed = trimCanvas(c);

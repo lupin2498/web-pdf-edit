@@ -204,3 +204,59 @@ export function appErrors(logs) {
 }
 
 export const account = (page) => page.evaluate(() => fetch('/api/me', { cache: 'no-store' }).then((r) => r.json()).then((d) => d.account));
+
+// ---------------------------------------------------------------------------
+// Helpers for the web-only flows (pages, payments, landing pages).
+
+export const ACTIVE = '.doc-view:not(.hidden)';
+
+/** Opens a document from disk in the running editor and waits for it. */
+export async function openDoc(page, file) {
+  const name = path.basename(file);
+  await page.evaluate((u) => window.__app.openPaths([u]), fileUrl(file));
+  await page.waitForFunction((n) => window.__app.activeDoc && window.__app.activeDoc.session.name === n, name, { timeout: 30000 });
+  await page.waitForSelector(`${ACTIVE} .page canvas`, { timeout: 30000 });
+}
+
+/** Number of finished downloads with this file name. */
+export const downloadCount = (ctx, name) => ctx.downloads.filter((d) => d.name === name).length;
+
+/** Waits for one more download of `name` than `before` and returns its path. */
+export async function waitNewDownload(ctx, name, before, timeout = 30000) {
+  const start = Date.now();
+  for (;;) {
+    const list = ctx.downloads.filter((d) => d.name === name);
+    if (list.length > before && list[list.length - 1].done) {
+      const item = list[list.length - 1];
+      if (item.error) throw item.error;
+      return item.file;
+    }
+    if (Date.now() - start > timeout) throw new Error(`No new download of "${name}" (have: ${ctx.downloads.map((d) => d.name).join(', ') || 'nothing'})`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+/** Pages shown in the header (free + purchased). */
+export const quota = (page) => page.$eval('.quota-pill', (e) => Number(e.dataset.available));
+
+/** Sends a SePay webhook (bank transfer notification) to the server. */
+export function sepayWebhook(server, payload, key) {
+  return fetch(`${server.url}/api/pay/sepay/webhook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Apikey ${key}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Presses a shortcut with the focus in the document view. */
+export async function pressInDoc(page, keys) {
+  await page.click(`${ACTIVE} .viewer`, { position: { x: 4, y: 4 } });
+  await page.keyboard.press(keys);
+}
+
+/** Rotates the first page (makes the document "changed"). */
+export const touchDoc = (page) =>
+  page.evaluate(() => {
+    const d = window.__app.activeDoc;
+    d.session.rotatePages([d.session.state.pages[0].uid], 90);
+  });

@@ -276,38 +276,52 @@ export function setPaywall(fn) {
  * Checks that the user can afford to export `entries` and returns a ticket;
  * `await ticket.commit()` charges right before the file is handed over.
  * Resolves to null when the user closes the paywall without buying.
+ *
+ * The pages to charge are worked out again when the ticket is committed, and
+ * the commits of one document run one after the other: two exports started
+ * at the same time (a double click, a download during a conversion) never
+ * charge the same page twice.
  */
 export async function authorize(session, entries, action) {
   const keys = [...new Set(entries.map(pageKey))];
   const paid = paidKeys(session);
-  const pages = keys.filter((k) => !paid.has(k)).length;
-  const opId = newOpId();
-  const info = { pages, total: keys.length, action, name: session.name };
+  const unpaid = () => keys.filter((k) => !paid.has(k));
+  const info = { total: keys.length, action, name: session.name };
   const ticket = {
-    pages,
+    pages: unpaid().length,
     committed: false,
-    async commit() {
-      if (ticket.committed) return true;
-      if (pages > 0) {
-        for (;;) {
-          const r = await billing.consume(pages, action, opId);
-          if (r.ok) {
-            ticket.charged = r.charged;
-            break;
+    commit() {
+      if (ticket.committed) return Promise.resolve(true);
+      const run = async () => {
+        if (ticket.committed) return true;
+        const todo = unpaid();
+        if (todo.length) {
+          const opId = newOpId();
+          for (;;) {
+            const r = await billing.consume(todo.length, action, opId);
+            if (r.ok) {
+              ticket.charged = r.charged;
+              break;
+            }
+            if (!paywallOpener || !(await paywallOpener({ ...info, pages: todo.length, missing: r.missing }))) return false;
           }
-          if (!paywallOpener || !(await paywallOpener({ ...info, missing: r.missing }))) return false;
         }
-      }
-      for (const k of keys) paid.add(k);
-      ticket.committed = true;
-      if (pages > 0) billing.dispatchEvent(new CustomEvent('charged', { detail: { pages, charged: ticket.charged, action, account: billing.account } }));
-      return true;
+        for (const k of keys) paid.add(k);
+        ticket.committed = true;
+        ticket.pages = todo.length;
+        if (todo.length) billing.dispatchEvent(new CustomEvent('charged', { detail: { pages: todo.length, charged: ticket.charged, action, account: billing.account } }));
+        return true;
+      };
+      const result = (session.commitChain || Promise.resolve()).then(run, run);
+      // The chain itself never rejects, so a failed commit does not block the next one.
+      session.commitChain = result.catch(() => {});
+      return result;
     },
   };
-  if (pages === 0) return ticket;
+  if (!ticket.pages) return ticket;
   await billing.refreshIfStale();
-  if (billing.available < pages) {
-    if (!paywallOpener || !(await paywallOpener({ ...info, missing: pages - billing.available }))) return null;
+  if (billing.available < ticket.pages) {
+    if (!paywallOpener || !(await paywallOpener({ ...info, pages: ticket.pages, missing: ticket.pages - billing.available }))) return null;
   }
   return ticket;
 }

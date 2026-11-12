@@ -14,7 +14,7 @@ describe('loadConfig', () => {
     assert.equal(c.port, 3000);
     assert.equal(c.siteName, 'PDF Edit');
     assert.equal(c.siteUrl, '');
-    assert.deepEqual(c.free, { pages: 5, resetDays: 0, ipDailyPages: 20 });
+    assert.deepEqual(c.free, { pages: 5, resetDays: 0, ipDailyPages: 100 });
     assert.deepEqual(c.packs, DEFAULT_PACKS);
     assert.deepEqual(c.providers, []);
     assert.equal(c.orderTtlMinutes, 60);

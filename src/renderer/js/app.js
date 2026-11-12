@@ -12,6 +12,10 @@ import { billing, authorize } from '../../web/billing.js';
 import { openPaywall, openAccount } from '../../web/paywall.js';
 import { adSlot, configureAds, refreshAds } from '../../web/ads.js';
 import { safeFileName } from '../../web/api.js';
+import { formatMoney, packPrice } from '../../web/config.js';
+
+// Tasks that act on the document a landing page handed over.
+const TOOL_ACTIONS = new Set(['edit', 'organize', 'split', 'compress', 'word', 'image', 'text', 'protect', 'sign', 'annotate', 'convert']);
 
 export class App {
   constructor(root) {
@@ -44,7 +48,7 @@ export class App {
     const params = new URLSearchParams(location.search);
     const tool = params.get('tool');
     const buy = params.get('buy');
-    const handoff = params.get('open') === 'handoff';
+    const handoff = params.get('open') === 'handoff' || params.get('open') === 'retry';
     const initial = await window.api.initialFiles();
     if (handoff && !(initial && initial.length)) toast(t('web.handoffFailed'), { type: 'error', timeout: 6000 });
     if (params.has('lang') || buy) history.replaceState(null, '', location.pathname + (tool ? `?tool=${encodeURIComponent(tool)}` : '') + location.hash);
@@ -54,17 +58,31 @@ export class App {
   }
 
   // Starts the task a landing page asked for (?tool=...), with the files
-  // that were chosen there.
+  // that were chosen there. Without files (the hand-over failed) the task
+  // starts with the next file the user opens.
   async startWith(tool, paths) {
     const F = this.features;
     if (tool && /[?&]tool=/.test(location.search)) history.replaceState(null, '', location.pathname + location.hash);
     if (tool === 'merge') return F.combine.open(this, { paths });
     if (tool === 'blank' && !paths.length) return F.create.blank(this);
-    if (!paths.length) return;
+    if (!paths.length) {
+      if (TOOL_ACTIONS.has(tool)) this.pendingTool = tool;
+      return;
+    }
+    await this.openForTool(tool, paths);
+  }
+
+  async openForTool(tool, paths) {
     const opts = tool === 'edit' ? { thenTool: 'edit' } : tool === 'organize' ? { thenRibbon: 'page' } : {};
+    const before = this.activeDoc;
     await this.openPaths(paths, opts);
     const doc = this.activeDoc;
-    if (!doc) return;
+    // Dialogs of the task stay open on their own; opening is done.
+    if (doc && doc !== before) this.runTool(tool, doc);
+  }
+
+  async runTool(tool, doc) {
+    const F = this.features;
     const run = {
       split: () => F.pages.split(doc),
       compress: () => F.compress.open(doc),
@@ -76,13 +94,12 @@ export class App {
       annotate: () => this.selectRibbonTab('comment'),
       convert: () => this.selectRibbonTab('convert'),
     }[tool];
-    if (run) {
-      try {
-        await run();
-      } catch (e) {
-        console.error(e);
-        alertDialog(errorMessage(e));
-      }
+    if (!run) return;
+    try {
+      await run();
+    } catch (e) {
+      console.error(e);
+      alertDialog(errorMessage(e));
     }
   }
 
@@ -94,11 +111,14 @@ export class App {
       adFree: () => billing.adFree,
       house: (placement) => {
         const second = placement === 'app_home';
+        const cfg = billing.config;
+        const cheapest = cfg.packs.map((p) => packPrice(p, cfg.providers[0])).filter(Boolean).sort((a, b) => a.amount - b.amount)[0];
+        const params = { n: cfg.free.pages, price: cheapest ? formatMoney(cheapest.amount, cheapest.currency, getLanguage()) : '' };
         const card = h(
           'div',
           { class: 'house-ad' },
-          h('div', { class: 'house-ad-icon' }, icon(second ? 'shield' : 'sparkles')),
-          h('div', { class: 'house-ad-text' }, h('b', null, t(second ? 'ads.houseTitle2' : 'ads.houseTitle')), h('span', null, t(second ? 'ads.houseText2' : 'ads.houseText'))),
+          h('div', { class: 'house-ad-icon' }, icon(second ? 'gem' : 'sparkles')),
+          h('div', { class: 'house-ad-text' }, h('b', null, t(second ? 'ads.houseTitle2' : 'ads.houseTitle', params)), h('span', null, t(second ? 'ads.houseText2' : 'ads.houseText', params))),
           h('button', { class: 'btn small primary', onclick: () => openPaywall() }, t('ads.houseCta')),
         );
         return card;
@@ -131,7 +151,13 @@ export class App {
     clear(this.quotaEl);
     this.quotaEl.className = `quota-pill ${paid ? 'paid' : total > 0 ? 'free' : 'empty'}`;
     this.quotaEl.dataset.available = String(total);
-    this.quotaEl.append(icon(paid ? 'gem' : 'gift'), h('span', { class: 'quota-text' }, paid ? t('quota.credits', { n: total }) : t('quota.free', { n: a.free.remaining })));
+    this.quotaEl.append(
+      icon(paid ? 'gem' : 'gift'),
+      h('span', { class: 'quota-text long' }, paid ? t('quota.credits', { n: total }) : t('quota.free', { n: a.free.remaining })),
+      // Small screens show the number only.
+      h('span', { class: 'quota-text short' }, String(total)),
+    );
+    this.quotaEl.setAttribute('aria-label', paid ? t('quota.credits', { n: total }) : t('quota.free', { n: a.free.remaining }));
     this.buyBtn.classList.toggle('attention', total === 0);
   }
 
@@ -548,7 +574,13 @@ export class App {
 
   async openDialog(opts = {}) {
     const paths = await window.api.dialog.open({ multiple: true, filters: [{ name: t('filter.pdf'), extensions: ['pdf'] }, { name: t('filter.images'), extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }] });
-    if (paths.length) await this.openPaths(paths, opts);
+    if (!paths.length) return;
+    const tool = this.pendingTool;
+    if (tool && !opts.thenTool && !opts.thenRibbon) {
+      this.pendingTool = null;
+      return this.openForTool(tool, paths);
+    }
+    await this.openPaths(paths, opts);
   }
 
   async openPaths(paths, opts = {}) {
@@ -647,6 +679,17 @@ export class App {
   // download. Pages that were not paid for yet are charged first.
   async save(view, saveAs = false) {
     if (!view) return false;
+    // A second click (or Ctrl+S) while a download is being prepared is ignored.
+    if (view.saving) return false;
+    view.saving = true;
+    try {
+      return await this.saveNow(view, saveAs);
+    } finally {
+      view.saving = false;
+    }
+  }
+
+  async saveNow(view, saveAs) {
     view.overlay.commitEditing();
     view.closeNotePopup();
     const s = view.session;

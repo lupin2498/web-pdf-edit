@@ -119,6 +119,11 @@ h3 {
   letter-spacing: -0.02em;
   margin: 0 0 0.6em;
   color: var(--text);
+  text-wrap: balance;
+}
+.lead,
+.section-head p {
+  text-wrap: pretty;
 }
 h1 {
   font-size: clamp(2.1rem, 1.4rem + 3vw, 3.6rem);
@@ -2290,6 +2295,10 @@ table.data tr:hover td {
   }
   .hero {
     padding: 40px 0 44px;
+  }
+  .pill {
+    font-size: 0.8rem;
+    text-align: left;
   }
   .section {
     padding: 60px 0;

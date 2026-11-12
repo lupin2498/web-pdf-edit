@@ -13,7 +13,8 @@ const SIZES = {
   landing_mid: ['auto', 0, 0],
   landing_bottom: ['auto', 0, 0],
   app_home: ['auto', 0, 0],
-  app_side: ['fixed', 300, 250],
+  // The properties panel is narrower than 300 px: a responsive unit fits.
+  app_side: ['auto', 0, 0],
 };
 
 const slots = new Set();
