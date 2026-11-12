@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-static/
+data/
+.env
+*.log
+.DS_Store
+tests/output/
+tests/fixtures/generated/
